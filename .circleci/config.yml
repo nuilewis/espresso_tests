@@ -1,0 +1,73 @@
+version: 2.1
+
+orbs:
+  android: circleci/android@2.4.0
+jobs:
+  test:
+    description: Runs unit tests and instrumented tests on App
+    executor:
+      name: android/android-machine
+      resource-class: large
+      tag: 2024.01.1
+
+    steps:
+      - checkout
+      - run:
+          name: Chmod Permissions
+          command: sudo chmod +x gradlew
+
+      - android/create-avd:
+          avd-name: avd
+          install: true
+          system-image: system-images;android-29;default;x86
+      - android/start-emulator:
+          avd-name: avd
+          no-window: true
+          restore-gradle-cache-prefix: v2
+          post-emulator-launch-assemble-command: ./gradlew installDebug
+      - android/run-tests:
+          test-command: ./gradlew testDebugUnitTest
+
+      # - android/run-tests:
+      #     test-command: ./gradlew grantPermissionForODKXApp connectedSnapshotDebugAndroidTest
+      #     max-tries: 1
+      - run:
+          name: Run instrumented tests
+          command: |
+            ./gradlew connectedDebugAndroidTest
+
+      - android/save-gradle-cache:
+          cache-prefix: v1
+      - store_artifacts:
+          name: Store Test Results
+          path: services_app/build/outputs/androidTest-results
+      - store_artifacts:
+          name: Store Test Reports
+          path: services_app/build/reports
+
+  build:
+    docker:
+      - image: cimg/android:2024.01
+    steps:
+      - checkout
+      - run:
+          name: Chmod Permissions
+          command: sudo chmod +x gradlew
+      - android/restore-gradle-cache:
+          cache-prefix: v1
+      - run:
+          name: Download Dependencies
+          command: ./gradlew androidDependencies
+      - android/save-gradle-cache:
+          cache-prefix: v1
+      - run:
+          name: Build App
+          command: ./gradlew assemble
+
+workflows:
+  build-test-workflow:
+    jobs:
+      - build
+      - test:
+          requires:
+            - build
